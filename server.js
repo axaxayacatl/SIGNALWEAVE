@@ -4,9 +4,8 @@ const path = require("path");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Serve the GitHub repo's root files, including index.html
 app.use(express.json({ limit: "1mb" }));
-
-// Your current repository has index.html at the root.
 app.use(express.static(__dirname));
 
 const clean = (value, max = 100) => {
@@ -24,21 +23,13 @@ async function getJSON(url) {
   });
 
   if (!response.ok) {
-    throw new Error(
-      `Upstream request failed: ${response.status}`
-    );
+    throw new Error(`Upstream request failed: ${response.status}`);
   }
 
   return response.json();
 }
 
-
-// ========================================
-// SIGNALWEAVE API
-// ========================================
-
 app.get("/api/weave", async (req, res) => {
-
   const q = clean(req.query.q);
 
   if (!q) {
@@ -48,7 +39,6 @@ app.get("/api/weave", async (req, res) => {
   }
 
   try {
-
     const wikipediaURL =
       "https://en.wikipedia.org/w/api.php" +
       "?action=query" +
@@ -65,102 +55,59 @@ app.get("/api/weave", async (req, res) => {
       "&format=json" +
       "&origin=*";
 
-
     const itunesURL =
       "https://itunes.apple.com/search" +
       "?term=" + encodeURIComponent(q) +
       "&entity=album,song" +
       "&limit=8";
 
-
     const [wiki, music] = await Promise.all([
       getJSON(wikipediaURL),
       getJSON(itunesURL)
     ]);
 
+    const wikipediaResults = Object.values(
+      wiki.query?.pages || {}
+    ).map(item => ({
+      type: "REFERENCE",
+      title: item.title || "Untitled",
+      text: item.extract || "No abstract available.",
+      url: item.pageid
+        ? "https://en.wikipedia.org/?curid=" + item.pageid
+        : "https://en.wikipedia.org/",
+      image: item.thumbnail?.source || null,
+      source: "WIKIPEDIA"
+    }));
 
-    // ========================================
-    // WIKIPEDIA
-    // ========================================
-
-    const wikipediaResults =
-      Object.values(
-        wiki.query?.pages || {}
-      ).map(item => ({
-
-        type: "REFERENCE",
-
-        title:
-          item.title ||
-          "Untitled",
-
-        text:
-          item.extract ||
-          "No abstract available.",
-
-        url:
-          "https://en.wikipedia.org/?curid=" +
-          item.pageid,
-
-        image:
-          item.thumbnail?.source ||
-          null,
-
-        source:
-          "WIKIPEDIA"
-
-      }));
-
-
-    // ========================================
-    // ITUNES
-    // ========================================
-
-    const itunesResults =
-      (music.results || []).map(item => ({
-
-        type:
-          item.kind === "song"
-            ? "TRACK"
-            : "RECORD",
-
-        title:
-          item.trackName ||
-          item.collectionName ||
-          "Untitled",
-
-        text:
-          [
-            item.artistName,
-            item.primaryGenreName
-          ]
-          .filter(Boolean)
-          .join(" · "),
-
-        url:
-          item.trackViewUrl ||
-          item.collectionViewUrl ||
-          "#",
-
-        image:
-          item.artworkUrl100
-            ? item.artworkUrl100.replace(
-                "100x100",
-                "400x400"
-              )
-            : null,
-
-        source:
-          "ITUNES"
-
-      }));
-
+    const itunesResults = (music.results || []).map(item => ({
+      type: item.kind === "song" ? "TRACK" : "RECORD",
+      title:
+        item.trackName ||
+        item.collectionName ||
+        "Untitled",
+      text: [
+        item.artistName,
+        item.primaryGenreName
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      url:
+        item.trackViewUrl ||
+        item.collectionViewUrl ||
+        "#",
+      image: item.artworkUrl100
+        ? item.artworkUrl100.replace(
+            "100x100",
+            "400x400"
+          )
+        : null,
+      source: "ITUNES"
+    }));
 
     const signals = [
       ...wikipediaResults.slice(0, 6),
       ...itunesResults.slice(0, 6)
     ];
-
 
     return res.json({
       query: q,
@@ -168,58 +115,28 @@ app.get("/api/weave", async (req, res) => {
       signals
     });
 
-  }
-
-  catch (error) {
-
+  } catch (error) {
     console.error(
       "SIGNALWEAVE API ERROR:",
       error
     );
 
     return res.status(502).json({
-
-      error:
-        "The weave could not be retrieved.",
-
-      detail:
-        error.message
-
+      error: "The weave could not be retrieved.",
+      detail: error.message
     });
-
   }
-
 });
 
-
-// ========================================
-// FRONTEND FALLBACK
-// ========================================
-//
-// Express 5 compatible.
-// Do NOT use app.get("*") here.
-//
-
+// Express 5-compatible fallback for the root-level index.html
 app.get(/.*/, (req, res) => {
-
   res.sendFile(
-    path.join(
-      __dirname,
-      "index.html"
-    )
+    path.join(__dirname, "index.html")
   );
-
 });
-
-
-// ========================================
-// START
-// ========================================
 
 app.listen(PORT, () => {
-
   console.log(
-    `SIGNALWEAVE: http://localhost:${PORT}`
+    `SIGNALWEAVE running on port ${PORT}`
   );
-
 });
